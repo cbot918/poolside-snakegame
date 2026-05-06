@@ -5,8 +5,15 @@ import { useEffect, useRef, useState, useCallback } from "react";
 type Direction = "up" | "down" | "left" | "right";
 type Position = { x: number; y: number };
 
+interface ScoreEntry {
+  score: number;
+  date: string;
+  gameTime: number;
+}
+
 const BOARD_SIZE = 20;
 const INITIAL_SPEED = 150;
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api";
 
 export default function SnakeGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -16,7 +23,41 @@ export default function SnakeGame() {
   const [direction, setDirection] = useState<Direction>("right");
   const [snake, setSnake] = useState<Position[]>([{ x: 10, y: 10 }]);
   const [food, setFood] = useState<Position>({ x: 5, y: 5 });
+  const [gameTime, setGameTime] = useState(0);
+  const [highScores, setHighScores] = useState<ScoreEntry[]>([]);
+  const [showScores, setShowScores] = useState(false);
   const gameLoopRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const startTimeRef = useRef<number>(0);
+
+  const fetchHighScores = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/scores`);
+      if (response.ok) {
+        const scores = await response.json();
+        setHighScores(scores);
+      }
+    } catch (error) {
+      console.error("Failed to fetch scores:", error);
+    }
+  }, []);
+
+  const saveScore = useCallback(async (finalScore: number, time: number) => {
+    try {
+      await fetch(`${API_BASE}/scores`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ score: finalScore, gameTime: time }),
+      });
+      fetchHighScores();
+    } catch (error) {
+      console.error("Failed to save score:", error);
+    }
+  }, [fetchHighScores]);
+
+  useEffect(() => {
+    fetchHighScores();
+  }, [fetchHighScores]);
 
   const generateFood = useCallback(() => {
     const newFood = {
@@ -31,12 +72,19 @@ export default function SnakeGame() {
     setDirection("right");
     setScore(0);
     setGameOver(false);
+    setGameTime(0);
     generateFood();
   };
 
   const startGame = () => {
     resetGame();
     setIsPlaying(true);
+    startTimeRef.current = Date.now();
+    
+    // Start timer
+    timerRef.current = setInterval(() => {
+      setGameTime(Math.floor((Date.now() - startTimeRef.current) / 1000));
+    }, 1000);
   };
 
   const gameLoop = useCallback(() => {
@@ -64,6 +112,9 @@ export default function SnakeGame() {
       // Check collision with self
       if (prevSnake.some((segment) => segment.x === head.x && segment.y === head.y)) {
         setGameOver(true);
+        setIsPlaying(false);
+        if (timerRef.current) clearInterval(timerRef.current);
+        saveScore(score, gameTime);
         return prevSnake;
       }
 
@@ -79,7 +130,7 @@ export default function SnakeGame() {
 
       return newSnake;
     });
-  }, [direction, food, generateFood, isPlaying]);
+  }, [direction, food, generateFood, isPlaying, gameOver, score, gameTime, saveScore]);
 
   useEffect(() => {
     if (isPlaying && !gameOver) {
@@ -179,6 +230,9 @@ export default function SnakeGame() {
           <div className="text-xl font-semibold">
             Score: <span className="text-cyan-400">{score}</span>
           </div>
+          <div className="text-lg text-gray-400">
+            Time: <span className="text-blue-400">{gameTime}s</span>
+          </div>
           {!isPlaying && (
             <button
               onClick={startGame}
@@ -199,6 +253,7 @@ export default function SnakeGame() {
         {gameOver && (
           <div className="mt-4 text-center">
             <p className="text-2xl font-bold text-red-400 mb-2">Game Over!</p>
+            <p className="text-lg mb-2">Final Score: {score}</p>
             <button
               onClick={startGame}
               className="px-6 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-lg font-semibold hover:from-cyan-600 hover:to-blue-600 transition-all"
@@ -213,6 +268,29 @@ export default function SnakeGame() {
             <p>Use arrow keys or WASD to control the snake</p>
           </div>
         )}
+
+        <div className="mt-4">
+          <button
+            onClick={() => setShowScores(!showScores)}
+            className="w-full py-2 text-sm text-blue-400 hover:text-blue-300 transition-colors"
+          >
+            {showScores ? "Hide" : "Show"} High Scores
+          </button>
+          
+          {showScores && highScores.length > 0 && (
+            <div className="mt-2 bg-gray-900 rounded-lg p-4 max-h-40 overflow-y-auto">
+              <h3 className="font-semibold mb-2 text-center">Top Scores</h3>
+              <ol className="space-y-1">
+                {highScores.map((entry, index) => (
+                  <li key={index} className="flex justify-between text-sm">
+                    <span className="text-yellow-400">#{index + 1} {entry.score}</span>
+                    <span className="text-gray-400">{entry.gameTime}s</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
