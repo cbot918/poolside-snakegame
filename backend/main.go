@@ -96,7 +96,12 @@ func (sh *ScoreHistory) GetAllScores() []ScoreEntry {
 
 func main() {
 	// Get the data file path (in backend/data directory)
-	dataDir := filepath.Join("data")
+	// Use absolute path to handle running from different directories
+	exe, err := os.Executable()
+	if err != nil {
+		log.Fatal(err)
+	}
+	dataDir := filepath.Join(filepath.Dir(exe), "data")
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		log.Fatal(err)
 	}
